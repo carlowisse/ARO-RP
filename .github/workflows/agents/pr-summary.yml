@@ -1,0 +1,38 @@
+name: Agent PR Summary
+
+on:
+  pull_request:
+
+permissions:
+  pull-requests: read
+  contents: read
+  models: read
+
+jobs:
+  summarise-pr:
+    name: Summarize PR Changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Install gh-models extension
+        run: gh extension install https://github.com/github/gh-models
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate PR Summary
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |-
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+
+          # Fetch PR and save to structured file
+          gh pr view "$PR_NUMBER" --json title,body,comments,reviews > pr.json
+
+          # Generate summary using gh-models and pr.json and output to summary.txt
+          cat pr.json | gh models run openai/gpt-5 \
+            "Given the following pull request information, generate a clear and concise 2 sentence summary that highlights the key changes and their purpose." > summary.txt
+
+          # Post summary as comment
+          gh pr comment "$PR_NUMBER" --body "$(cat summary.txt)"

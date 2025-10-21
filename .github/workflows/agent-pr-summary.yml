@@ -1,4 +1,4 @@
-name: Agent PR Summary
+name: agent-pr-summary
 
 on:
   pull_request:
@@ -9,8 +9,8 @@ permissions:
   models: read
 
 jobs:
-  summarise-pr:
-    name: Summarize PR Changes
+  summarize-pr:
+    name: summarize-pr
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository

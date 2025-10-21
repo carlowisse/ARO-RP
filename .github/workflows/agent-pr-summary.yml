@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   summarize-pr:
-    name: summarize-pr
+    name: summarize-pr-changes
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -27,15 +27,45 @@ jobs:
         run: |-
           PR_NUMBER="${{ github.event.pull_request.number }}"
 
-          # Fetch PR and save to structured file
-          gh pr view "$PR_NUMBER" --json title,body,comments,reviews > pr.json
-
-          # Fetch the code diff
+          gh pr view "$PR_NUMBER" --json title,body > pr.json
           gh pr diff "$PR_NUMBER" > diff.txt
 
-          # Generate summary using gh-models and pr.json and output to summary.txt
           (cat pr.json && echo "--- DIFF ---" && cat diff.txt) | gh models run openai/gpt-5 \
             "Given the following pull request information AND the code diff, generate a clear and concise 2 sentence summary that highlights the key changes and their purpose." > summary.txt
 
-          # Post summary as comment
-          gh pr comment "$PR_NUMBER" --body "$(cat summary.txt)"
+          # HIDDEN MARKER
+          # To find comment for update if a new push is made to the PR
+          echo "" > body-for-comment.txt
+          echo -e "\n##AI SUMMARY\n\n" >> body-for-comment.txt
+          cat summary.txt >> body-for-comment.txt
+
+      - name: post-update-comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          MARKER: ""
+          AUTHOR: "github-actions[bot]"
+        run: |
+          COMMENT_ID=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" \
+            --jq -r --arg author "$AUTHOR" --arg marker "$MARKER" '
+              .[] |
+              select(.user.login == $author and .body | contains($marker)) |
+              .id
+            ' | head -n 1)
+
+          if [[ -n "$COMMENT_ID" ]]; then
+            echo "Found existing comment ID: $COMMENT_ID. Updating..."
+
+            BODY_CONTENT=$(cat body-for-comment.txt)
+            BODY_JSON=$(jq -n --arg body_text "$BODY_CONTENT" '{body: $body_text}')
+
+            echo "$BODY_JSON" | gh api \
+              "repos/$REPO/issues/comments/$COMMENT_ID" \
+              -X PATCH \
+              --input -
+          else
+            echo "No existing comment found. Creating new one..."
+
+            gh pr comment "$PR_NUMBER" --body-file body-for-comment.txt
+          fi

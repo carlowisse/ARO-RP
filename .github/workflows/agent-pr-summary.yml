@@ -4,7 +4,7 @@ on:
   pull_request:
 
 permissions:
-  pull-requests: read
+  pull-requests: write
   contents: read
   models: read
 

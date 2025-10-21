@@ -1,0 +1,62 @@
+name: agent-pr-summary
+
+on:
+  pull_request:
+
+permissions:
+  pull-requests: write
+  contents: read
+  models: read
+
+jobs:
+  summarize-pr:
+    name: summarize-pr
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Install gh-models extension
+        run: gh extension install https://github.com/github/gh-models
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate PR Summary
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |-
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          REPO="${{ github.repository }}"
+          MARKER="### PR Summary (agent-pr-summary)"
+
+          # Fetch PR and save to structured file
+          gh pr view "$PR_NUMBER" --json title,body,comments,reviews > pr.json
+
+          # Fetch the code diff
+          gh pr diff "$PR_NUMBER" > diff.txt
+
+          # Generate summary using model
+          (cat pr.json && echo "--- DIFF ---" && cat diff.txt) | gh models run openai/gpt-5 \
+            "Given the following pull request information AND the code diff, generate a clear and concise 2 sentence summary that highlights the key changes and their purpose." > summary.txt
+
+          SUMMARY_BODY="$(cat summary.txt)"
+
+          # Find existing comment from this workflow (by marker)
+          COMMENT_ID=$(gh api repos/$REPO/issues/$PR_NUMBER/comments \
+            --jq ".[] | select(.user.login==\"github-actions[bot]\" and (.body | startswith(\"$MARKER\"))) | .id" | tail -n 1)
+
+          # Write the body to a temp file with real newlines
+          {
+            echo "$MARKER"
+            echo ""
+            echo "$SUMMARY_BODY"
+          } > comment.txt
+
+          if [ -n "$COMMENT_ID" ]; then
+            # Update existing comment
+            gh api repos/$REPO/issues/comments/$COMMENT_ID \
+              -X PATCH -F body="$(cat comment.txt)"
+          else
+            # Post new comment
+            gh pr comment "$PR_NUMBER" --body "$(cat comment.txt)"
+          fi

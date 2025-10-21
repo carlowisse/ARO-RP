@@ -36,7 +36,7 @@ jobs:
           # HIDDEN MARKER
           # To find comment for update if a new push is made to the PR
           echo "" > body-for-comment.txt
-          echo -e "\n##AI SUMMARY\n\n" >> body-for-comment.txt
+          echo -e "\nAI SUMMARY\n\n" >> body-for-comment.txt
           cat summary.txt >> body-for-comment.txt
 
       - name: post-update-comment
